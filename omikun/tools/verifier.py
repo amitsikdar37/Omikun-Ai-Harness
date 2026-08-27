@@ -47,6 +47,10 @@ class ProjectVerifierTool(BaseTool):
                 if f.endswith(".html"):
                     content = full_path.read_text(encoding="utf-8", errors="replace")
                     
+                    # Check for complete HTML structure
+                    if "<html" not in content.lower() or "<body" not in content.lower():
+                        issues.append(f"❌ Incomplete HTML in '{rel_path}': Missing <html> or <body> tags. Write the full valid HTML document starting with <!DOCTYPE html>.")
+
                     # Check for modern UI styling (Tailwind, modern CSS, or design framework)
                     has_tailwind = "tailwindcss.com" in content or "cdn.jsdelivr.net" in content or "styles.css" in content
                     has_interactive_elements = "<button" in content.lower() or "input" in content.lower()
@@ -61,10 +65,17 @@ class ProjectVerifierTool(BaseTool):
                         if not re.search(rf'<script[^>]+src=["\'](\./)?{re.escape(js_name)}["\']', content, re.IGNORECASE):
                             issues.append(f"❌ Missing Script Link: '{rel_path}' does not include '<script src=\"{js_name}\"></script>'. Add the script tag before </body> so your JavaScript executes.")
 
-                    # Check input contrast (prevent white text on white input)
+                    # Check input contrast (prevent invisible text)
                     if "<input" in content.lower():
-                        if "text-slate-" not in content and "text-black" not in content and "text-gray-9" not in content and "bg-white/10" not in content and "bg-slate-" not in content and "bg-transparent" not in content:
-                            issues.append(f"⚠️ Input Contrast Warning: '{rel_path}' input might have invisible text. Ensure <input> has readable styling like `class=\"bg-white/10 text-white placeholder-slate-400 p-3 rounded-xl border border-white/20\"` or `class=\"text-slate-900 bg-white p-3 rounded-xl\"`.")
+                        # Detect light background containers (e.g. bg-white, bg-gray-100, bg-slate-100)
+                        is_light_bg = "bg-white" in content or "bg-gray-1" in content or "bg-slate-1" in content or "bg-zinc-1" in content
+                        input_classes = re.findall(r'<input[^>]+class=["\']([^"\']+)["\']', content, re.IGNORECASE)
+                        for inp_class in input_classes:
+                            if is_light_bg and ("text-white" in inp_class or "text-slate-100" in inp_class):
+                                issues.append(
+                                    f"❌ Input Contrast Bug in '{rel_path}': <input> has 'text-white' inside a light background ('bg-white'/'bg-gray-100'). "
+                                    f"Text will be invisible when typing! Use dark text styling like `class=\"text-slate-900 bg-slate-100 p-3 rounded-xl border border-slate-300\"`."
+                                )
 
                     # Find all linked scripts: <script src="...">
                     script_srcs = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', content, re.IGNORECASE)
@@ -100,9 +111,16 @@ class ProjectVerifierTool(BaseTool):
                             issues.append(f"❌ Incomplete JS: '{rel_path}' contains stub/placeholder comments. Write the complete, working code instead of placeholders.")
                             break
 
-                    # Check for hallucinated Open-Meteo API properties (e.g. current_weather.temperature_2m)
-                    if "current_weather.temperature_2m" in js_content or "current_weather.relativehumidity" in js_content:
-                        issues.append(f"❌ Hallucinated API Property: '{rel_path}' accesses 'current_weather.temperature_2m' or 'current_weather.relativehumidity'. In Open-Meteo API v1 forecast with `current=temperature_2m,relative_humidity_2m,wind_speed_10m`, access `data.current.temperature_2m`, `data.current.relative_humidity_2m`, and `data.current.wind_speed_10m`.")
+                    # Check for Open-Meteo property bugs
+                    if "current_weather.temperature_2m" in js_content:
+                        issues.append(f"❌ Open-Meteo Property Bug in '{rel_path}': In Open-Meteo current_weather object, the property is `current_weather.temperature` (not temperature_2m). Access `weatherData.current_weather.temperature`.")
+
+                    # Check for placeholder API keys (e.g. YOUR_API_KEY)
+                    if re.search(r'YOUR_[A-Z_]*KEY', js_content, re.IGNORECASE) or ("api.openweathermap.org" in js_content and "appid=" in js_content):
+                        issues.append(
+                            f"❌ Unusable API Key in '{rel_path}': Found placeholder 'YOUR_API_KEY' or OpenWeatherMap requiring a private key. "
+                            f"Use a zero-key public API like Open-Meteo (`https://api.open-meteo.com/v1/forecast?latitude=51.5&longitude=-0.12&current_weather=true`) or local mock data so the app works immediately without API keys."
+                        )
 
                     # Check for node syntax validity
                     try:
@@ -119,10 +137,11 @@ class ProjectVerifierTool(BaseTool):
                     html_path = full_path.parent / "index.html"
                     if html_path.exists():
                         html_text = html_path.read_text(encoding="utf-8", errors="replace")
-                        referenced_ids = re.findall(r'document\.getElementById\(["\']([^"\']+)["\']\)', js_content)
+                        referenced_ids = set(re.findall(r'document\.getElementById\(["\']([^"\']+)["\']\)', js_content))
+                        referenced_ids.update(re.findall(r'document\.querySelector\(["\']#([^"\'\s,>+~]+)["\']\)', js_content))
                         for dom_id in referenced_ids:
-                            if f'id="{dom_id}"' not in html_text and f"id='{dom_id}'" not in html_text:
-                                issues.append(f"❌ DOM ID Mismatch: '{rel_path}' references 'document.getElementById(\"{dom_id}\")', but no element with id=\"{dom_id}\" exists in 'index.html'!")
+                            if f'id="{dom_id}"' not in html_text and f"id='{dom_id}'" not in html_text and f'id=`{dom_id}`' not in html_text:
+                                issues.append(f"❌ DOM ID Mismatch: '{rel_path}' queries '#{dom_id}' (`document.getElementById(\"{dom_id}\")`), but no element with id=\"{dom_id}\" exists in 'index.html'!")
 
                 # 3. Check Python syntax using py_compile
                 if f.endswith(".py") and f != "__init__.py":

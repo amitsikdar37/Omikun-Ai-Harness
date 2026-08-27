@@ -34,19 +34,20 @@ CRITICAL RULES:
    - ALWAYS include Tailwind CSS CDN `<script src="https://cdn.tailwindcss.com"></script>` in `<head>` of `index.html`.
    - ALWAYS link your JavaScript before `</body>`: `<script src="app.js"></script>`.
    - UI DESIGN & CONTRAST RULES:
-     * Styling: Use modern Tailwind CSS classes with beautiful gradients, rounded cards, subtle borders (`border-white/10` or `border-slate-700`), and smooth hover states.
-     * Text Contrast: Ensure all `<input>`, `<textarea>`, and `<button>` elements have legible, high-contrast text (e.g. `class="bg-white/10 text-white placeholder-slate-400 p-3 rounded-xl border border-white/20 focus:outline-none focus:ring-2 focus:ring-indigo-400"` or `class="bg-white text-slate-900 p-3 rounded-xl"`).
-     * Layout Architecture: Choose a layout appropriate for the specific goal:
-       - For Todo/Task Managers: Clean task container with input box, Add button, filter tabs (All, Active, Completed), interactive list items with complete/delete/edit controls, and counter badge.
-       - For Weather/Data Apps: Metric cards, search bar with search button, condition icons, and error banners.
-       - For Dashboards/Tools: Responsive grid cards, tables, action buttons, and modal dialogs.
-   - JAVASCRIPT STATE & INTERACTIVITY CONTRACT:
+     * High-Contrast Themes:
+       - If using a Dark Theme (e.g. `bg-slate-900`): Use `text-white` for body and input text with subtle borders (`border-white/20`).
+       - If using a Light Theme (e.g. `bg-white` or `bg-gray-100`): Use dark text (`text-slate-900` or `text-gray-900`) for all text and input boxes. NEVER put `text-white` inside a white background!
+     * Controls & Interactivity: Include visible inputs, styled `<button>` elements with hover transitions, and containers for display results.
+   - ZERO-KEY PUBLIC APIS & DATA INTEGRATION:
+     * When external data is needed (weather, geocoding, crypto, currencies): Use 100% free, public APIs that require ZERO API keys (e.g. Open-Meteo `https://api.open-meteo.com/v1/forecast?latitude=51.5&longitude=-0.12&current_weather=true`, or open public REST endpoints) or local mock data.
+     * NEVER use APIs that require sign-up or private keys (e.g. never use `appid=YOUR_API_KEY` or OpenWeatherMap).
+   - JAVASCRIPT STATE & DOM CONSISTENCY CONTRACT:
      * Full Implementation: Write complete, working JavaScript with in-memory state or `localStorage` persistence.
+     * Synchronize DOM IDs: Check `index.html` carefully. Every single ID queried in `app.js` (e.g. `document.getElementById('search-input')`) MUST exist identically in `index.html`.
      * Form Handling: When using `<form>`, always call `e.preventDefault()` inside the submit event listener so the page does not reload.
-     * DOM Consistency: Every ID referenced in `app.js` (e.g. `document.getElementById('task-input')`) MUST exist in `index.html`.
      * Zero Stubs: NEVER leave placeholder comments like `// TODO`, `// Handle logic`, or empty functions.
    - FULL FILE INTEGRITY: When creating or writing `index.html` or `app.js`, always write the COMPLETE file from beginning to end.
-   - Always run `verify_project` to ensure 0 missing assets, 0 syntax errors, and 0 DOM ID mismatches.
+   - Always run `verify_project` to ensure 0 missing assets, 0 syntax errors, 0 API key errors, and 0 DOM ID mismatches.
 
 TOOL CALL FORMAT:
 ```json

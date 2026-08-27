@@ -57,7 +57,7 @@ async def test_project_verifier_tool(tmp_path: Path):
 
     # Create HTML referencing missing CSS and JS
     html_file = tmp_path / "index.html"
-    html_file.write_text('<link rel="stylesheet" href="styles.css"><input id="search" class="text-slate-900 bg-white"><button>Search</button><script src="app.js"></script>', encoding="utf-8")
+    html_file.write_text('<!DOCTYPE html><html><body><link rel="stylesheet" href="styles.css"><input id="search" class="text-slate-900 bg-white"><button>Search</button><script src="app.js"></script></body></html>', encoding="utf-8")
 
     # Verification should fail
     res = await verifier.execute()

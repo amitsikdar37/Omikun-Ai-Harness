@@ -65,7 +65,6 @@ desktop.ini
 .omikun/
 *.log
 scratch/
-weather-app/
-weatherapp/
+weather*/
 todolist/
 workspace*/

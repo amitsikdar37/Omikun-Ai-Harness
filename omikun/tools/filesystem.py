@@ -128,10 +128,25 @@ class PatchFileTool(BaseTool):
             norm_replacement = replacement_content.replace("\r\n", "\n")
 
             if not norm_target:
+                # If replacement is a full document or empty file, replace completely
+                if norm_replacement.strip().startswith("<!DOCTYPE") or norm_replacement.strip().startswith("<html") or not norm_content.strip():
+                    new_content = norm_replacement
+                elif "</body>" in norm_content:
+                    # Smart insert snippet before </body> or before local script
+                    if "<script" in norm_content:
+                        script_pos = norm_content.rfind("<script")
+                        new_content = norm_content[:script_pos] + "\n        " + norm_replacement + "\n    " + norm_content[script_pos:]
+                    else:
+                        body_pos = norm_content.rfind("</body>")
+                        new_content = norm_content[:body_pos] + "\n        " + norm_replacement + "\n" + norm_content[body_pos:]
+                else:
+                    new_content = norm_content + "\n" + norm_replacement
+
+                full_path.write_text(new_content, encoding="utf-8")
                 return ToolResult(
-                    success=False,
-                    output="",
-                    error=f"target_content cannot be empty. Specify the exact block of text to replace, or use write_file to overwrite {file_path}.",
+                    success=True,
+                    output=f"Successfully inserted/updated content in {file_path}.",
+                    metadata={"file_path": file_path},
                 )
 
             count = norm_content.count(norm_target)
