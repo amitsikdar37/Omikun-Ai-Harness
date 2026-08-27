@@ -1,4 +1,4 @@
-﻿# Byte-compiled / optimized / DLL files
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
@@ -66,4 +66,6 @@ desktop.ini
 *.log
 scratch/
 weather-app/
+weatherapp/
 todolist/
+workspace*/

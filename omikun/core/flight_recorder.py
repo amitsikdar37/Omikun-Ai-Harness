@@ -21,8 +21,8 @@ class StepRecord(BaseModel):
     tool_error: Optional[str] = None
     tool_exit_code: int = 0
     duration_ms: float = 0.0
-    git_commit_before: Optional[str] = None
-    git_commit_after: Optional[str] = None
+    snapshot_before: Optional[str] = None
+    snapshot_after: Optional[str] = None
     rollback_occurred: bool = False
 
 
@@ -65,13 +65,12 @@ class FlightRecorder:
 
 ## Step Execution Timeline
 
-| Step | Subtask | Tool | Status | Duration | Commit |
-| :--- | :--- | :--- | :--- | :--- | :--- |
+| Step | Subtask | Tool | Status | Duration |
+| :--- | :--- | :--- | :--- | :--- |
 """
         for r in self.records:
             status_icon = "✅" if r.tool_success else "❌"
-            commit_str = r.git_commit_after[:7] if r.git_commit_after else "-"
-            md += f"| {r.step_id} | {r.subtask_title[:30]} | `{r.tool_name}` | {status_icon} | {r.duration_ms:.0f}ms | `{commit_str}` |\n"
+            md += f"| {r.step_id} | {r.subtask_title[:30]} | `{r.tool_name}` | {status_icon} | {r.duration_ms:.0f}ms |\n"
 
         md += "\n---\n\n## Detailed Trajectory Log\n\n"
         for r in self.records:
