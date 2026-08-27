@@ -22,6 +22,12 @@ def parse_args() -> argparse.Namespace:
     run_parser.add_argument("--ollama-url", type=str, default="http://localhost:11434", help="Ollama API base URL")
     run_parser.add_argument("--workspace", type=str, default=".", help="Target workspace path")
 
+    # 'web' command
+    web_parser = subparsers.add_parser("web", help="Start the Omikun Web Cockpit UI")
+    web_parser.add_argument("--port", type=int, default=5000, help="Web server port (default: 5000)")
+    web_parser.add_argument("--host", type=str, default="127.0.0.1", help="Web server host (default: 127.0.0.1)")
+    web_parser.add_argument("--workspace", type=str, default=".", help="Default target workspace")
+
     # 'models' command
     subparsers.add_parser("models", help="List available models in local Ollama")
 
@@ -147,6 +153,37 @@ async def async_interactive() -> int:
     return 0
 
 
+async def async_web(args: argparse.Namespace) -> int:
+    """Launch the Omikun Web Cockpit server and open in browser."""
+    import webbrowser
+    from omikun.server import start_web_cockpit
+
+    url = f"http://{args.host}:{args.port}"
+    console.print(
+        Panel(
+            f"[bold white]⚡ OMIKUN WEB COCKPIT[/bold white]\n\n"
+            f"🌐 [bold cyan]{url}[/bold cyan]\n"
+            f"[dim]Live telemetry • Code Explorer • Real-time Interactive App Preview[/dim]\n\n"
+            f"[yellow]Press Ctrl+C to stop the web server.[/yellow]",
+            title="[bold yellow]🚀 STUDIO ONLINE[/bold yellow]",
+            border_style="cyan",
+            expand=False,
+        )
+    )
+
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+
+    try:
+        ws_path = Path(args.workspace).resolve()
+        await start_web_cockpit(host=args.host, port=args.port, workspace=ws_path)
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopping Web Cockpit server...[/dim]")
+    return 0
+
+
 def main() -> None:
     args = parse_args()
 
@@ -155,7 +192,11 @@ def main() -> None:
         exit_code = asyncio.run(async_interactive())
         sys.exit(exit_code)
 
-    if args.command == "run":
+    if args.command == "web":
+        exit_code = asyncio.run(async_web(args))
+        sys.exit(exit_code)
+
+    elif args.command == "run":
         exit_code = asyncio.run(async_run(args))
         sys.exit(exit_code)
 
