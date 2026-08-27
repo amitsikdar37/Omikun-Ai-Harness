@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from omikun.config import OmikunConfig, get_default_config
 from omikun.core.flight_recorder import FlightRecorder, StepRecord
-from omikun.core.git_manager import GitManager
+from omikun.core.snapshot_manager import SnapshotManager
 from omikun.llm.client import OllamaClient
 from omikun.llm.parser import ToolCallParser, ParsedToolCall
 from omikun.llm.prompts import (
@@ -46,9 +46,9 @@ class OmikunOrchestrator:
         self.event_callback = event_callback
         self.workspace_path = self.config.workspace_path
 
-        # Components
+        # Components (Zero Git commands used; all snapshots managed safely in memory/disk)
         self.llm = OllamaClient(self.config)
-        self.git = GitManager(self.workspace_path)
+        self.snapshot_mgr = SnapshotManager(self.workspace_path)
         self.flight_recorder = FlightRecorder(self.config)
         self.tools: Dict[str, BaseTool] = get_default_tools(self.workspace_path)
 
@@ -117,9 +117,8 @@ class OmikunOrchestrator:
         start_time = time.perf_counter()
         self._emit("status", f"🚀 Starting Omikun Orchestration for: '{goal}'")
 
-        # 1. Initialize Git repository
-        self.git.initialize_repo()
-        initial_commit = self.git.create_checkpoint("Initial state before run")
+        # 1. Capture initial workspace snapshot (Zero Git initialization)
+        initial_snapshot = self.snapshot_mgr.capture_snapshot("Initial state before run")
 
         # 2. Check Ollama connectivity
         if not await self.llm.check_health():
@@ -140,15 +139,24 @@ class OmikunOrchestrator:
             subtask.status = "in_progress"
             self._emit("step_start", f"▶️ Starting Subtask {subtask.id}: {subtask.title}", {"subtask": subtask.model_dump()})
 
-            # Checkpoint before subtask begins
-            checkpoint_commit = self.git.create_checkpoint(f"Pre-step {subtask.id}: {subtask.title}") or initial_commit
+            # Checkpoint snapshot before subtask begins
+            checkpoint_snapshot = self.snapshot_mgr.capture_snapshot(f"Pre-step {subtask.id}: {subtask.title}") or initial_snapshot
             subtask_succeeded = False
             attempts = 0
 
             while attempts < self.config.max_step_retries and not subtask_succeeded:
                 attempts += 1
                 files_tree = await self._get_workspace_file_tree()
-                step_prompt = get_step_context_prompt(
+                
+                reflection_prefix = ""
+                if attempts > 1:
+                    reflection_prefix = (
+                        f"⚠️ ATTEMPT {attempts}/{self.config.max_step_retries}: Previous action failed to complete this subtask.\n"
+                        f"ROOT-CAUSE REFLECTION DIRECTIVE: Analyze why the previous attempt failed from first principles. "
+                        f"Do NOT repeat the same mistake. Formulate a clean, correct fix.\n\n"
+                    )
+
+                step_prompt = reflection_prefix + get_step_context_prompt(
                     goal=goal,
                     current_step=f"{subtask.title} ({subtask.description}) [Attempt {attempts}/{self.config.max_step_retries}]",
                     completed_steps=self.completed_tasks,
@@ -196,9 +204,9 @@ class OmikunOrchestrator:
                 except Exception as e:
                     tool_result = BaseTool.ToolResult(success=False, output="", error=f"Tool crash: {str(e)}", exit_code=-1)
 
-                commit_after = None
+                snapshot_after = None
                 if tool_result.success:
-                    commit_after = self.git.create_checkpoint(f"Step {subtask.id}: Completed {tool_name}")
+                    snapshot_after = self.snapshot_mgr.capture_snapshot(f"Step {subtask.id}: Completed {tool_name}")
 
                 # Record in Flight Recorder
                 record = StepRecord(
@@ -214,8 +222,8 @@ class OmikunOrchestrator:
                     tool_error=tool_result.error,
                     tool_exit_code=tool_result.exit_code,
                     duration_ms=tool_result.duration_ms,
-                    git_commit_before=checkpoint_commit,
-                    git_commit_after=commit_after,
+                    snapshot_before=checkpoint_snapshot,
+                    snapshot_after=snapshot_after,
                 )
                 self.flight_recorder.record_step(record)
                 self.step_counter += 1
@@ -233,6 +241,10 @@ class OmikunOrchestrator:
                         subtask_succeeded = True
                 else:
                     last_tool_result_str = f"TOOL '{tool_name}' FAILED (Exit {tool_result.exit_code}):\n{tool_result.error or tool_result.output}"
+                    # If action failed, restore workspace to pre-step clean snapshot so bad partial edits don't corrupt the project
+                    if self.config.auto_rollback and checkpoint_snapshot:
+                        self._emit("rollback", f"⏪ Restoring workspace to clean snapshot before retry...")
+                        self.snapshot_mgr.restore_snapshot(checkpoint_snapshot)
 
             if subtask_succeeded:
                 subtask.status = "completed"
@@ -241,9 +253,9 @@ class OmikunOrchestrator:
             else:
                 subtask.status = "failed"
                 self._emit("error", f"❌ Subtask {subtask.id} failed after {self.config.max_step_retries} attempts.")
-                if self.config.auto_rollback and checkpoint_commit:
-                    self._emit("rollback", f"⏪ Triggering Git Rollback to checkpoint [{checkpoint_commit[:7]}]")
-                    self.git.rollback_to(checkpoint_commit)
+                if self.config.auto_rollback and checkpoint_snapshot:
+                    self._emit("rollback", f"⏪ Reverting failed subtask to clean snapshot [{checkpoint_snapshot}]")
+                    self.snapshot_mgr.restore_snapshot(checkpoint_snapshot)
                     record.rollback_occurred = True
 
         total_time = time.perf_counter() - start_time
