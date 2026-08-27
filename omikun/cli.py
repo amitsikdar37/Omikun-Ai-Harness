@@ -70,15 +70,90 @@ async def async_list_models(args: argparse.Namespace) -> int:
     for m in models:
         prefix = "⭐ " if "qwen" in m.lower() else "  "
         console.print(f"{prefix}[white]{m}[/white]")
+from rich.prompt import Prompt
+from rich.panel import Panel
+
+
+async def async_interactive() -> int:
+    """Run Omikun in interactive TUI prompt mode."""
+    config = get_default_config()
+    client = OllamaClient(config)
+
+    console.print(
+        Panel(
+            "[bold white]Autonomous Agentic Coding Studio for Lightweight Local LLMs[/bold white]\n"
+            "[dim]Direct on-device engineering • Zero Git pollution • Root-cause reflection[/dim]",
+            title="[bold yellow]⚡ OMIKUN INTERACTIVE STUDIO[/bold yellow]",
+            border_style="cyan",
+            expand=False,
+        )
+    )
+
+    # Health check
+    if not await client.check_health():
+        console.print(f"[bold red]❌ Cannot connect to Ollama at {config.ollama_base_url}.[/bold red]")
+        console.print("[yellow]Please make sure Ollama is running (`ollama serve` or start Ollama app).[/yellow]")
+        return 1
+
+    models = await client.list_models()
+    selected_model = config.model_name
+    if selected_model not in models and models:
+        # Prefer qwen2.5-coder if available
+        qwen_models = [m for m in models if "qwen" in m.lower()]
+        selected_model = qwen_models[0] if qwen_models else models[0]
+
+    console.print(f"[dim]Connected to Ollama • Active Model: [bold cyan]{selected_model}[/bold cyan][/dim]")
+
+    while True:
+        try:
+            goal = Prompt.ask("\n[bold cyan]🎯 What would you like Omikun to build?[/bold cyan] (or 'q' to quit)").strip()
+            if not goal or goal.lower() in {"q", "quit", "exit"}:
+                console.print("[dim]👋 Exiting Omikun Studio. Happy hacking![/dim]")
+                break
+
+            # Suggest folder name based on goal words
+            clean_name = "-".join([w.lower() for w in goal.split() if w.isalnum()][:3]) or "workspace"
+            default_ws = f"./{clean_name}"
+
+            ws_input = Prompt.ask("[bold green]📁 Target workspace folder[/bold green]", default=default_ws).strip()
+            ws_path = Path(ws_input).resolve()
+            ws_path.mkdir(parents=True, exist_ok=True)
+
+            run_config = OmikunConfig(
+                workspace_path=ws_path,
+                omikun_dir=ws_path / ".omikun",
+                model_name=selected_model,
+                ollama_base_url=config.ollama_base_url,
+            )
+
+            dashboard = TerminalDashboard()
+            dashboard.render_banner(
+                goal=goal,
+                model_name=run_config.model_name,
+                workspace_path=str(ws_path),
+            )
+
+            orchestrator = OmikunOrchestrator(
+                config=run_config,
+                event_callback=dashboard.handle_event,
+            )
+
+            await orchestrator.run(goal)
+
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[dim]👋 Session ended.[/dim]")
+            break
+
     return 0
 
 
 def main() -> None:
     args = parse_args()
 
+    # If no subcommand provided, default to Interactive Studio Mode
     if not args.command:
-        console.print("[yellow]No command specified. Use 'omikun --help' for usage.[/yellow]")
-        sys.exit(1)
+        exit_code = asyncio.run(async_interactive())
+        sys.exit(exit_code)
 
     if args.command == "run":
         exit_code = asyncio.run(async_run(args))

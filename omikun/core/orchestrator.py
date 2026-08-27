@@ -64,15 +64,42 @@ class OmikunOrchestrator:
             event = OrchestratorEvent(event_type=event_type, message=message, data=data or {})
             self.event_callback(event)
 
-    async def _get_workspace_file_tree(self) -> str:
-        """Fetch current files in workspace using list_dir tool."""
+    async def _get_workspace_context(self) -> str:
+        """Fetch current files in workspace and embed their actual content for full context awareness."""
+        import os
+        ignore_dirs = {".git", ".omikun", "__pycache__", ".venv", "node_modules"}
+        sections = []
+        
+        # 1. File tree overview
         res = await self.tools["list_dir"].execute(sub_path=".", max_depth=3)
-        return res.output or "(Empty directory)"
+        tree_text = res.output or "(Empty directory)"
+        sections.append(f"📁 PROJECT STRUCTURE:\n{tree_text}")
+
+        # 2. Embed content of existing key files (HTML, JS, CSS, Python, Configs)
+        file_contents = []
+        for root, dirs, files in os.walk(self.workspace_path):
+            dirs[:] = [d for d in dirs if d not in ignore_dirs]
+            for f in files:
+                if f.endswith((".html", ".js", ".css", ".py", ".json", ".md")) and f != "summary.md":
+                    p = Path(root) / f
+                    rel_path = p.relative_to(self.workspace_path)
+                    try:
+                        content = p.read_text(encoding="utf-8", errors="replace")
+                        if content.strip():
+                            preview = content[:2000] + ("\n... [truncated]" if len(content) > 2000 else "")
+                            file_contents.append(f"📄 File `{rel_path}`:\n```\n{preview}\n```")
+                    except Exception:
+                        pass
+
+        if file_contents:
+            sections.append("📄 CURRENT FILE CONTENTS (Use these exact IDs, functions, and elements):\n" + "\n\n".join(file_contents))
+
+        return "\n\n".join(sections)
 
     async def generate_plan(self, goal: str) -> List[SubTask]:
         """Generate a structured execution plan from the local LLM."""
         self._emit("status", "📋 Generating execution plan with local model...")
-        files_tree = await self._get_workspace_file_tree()
+        files_tree = await self._get_workspace_context()
         planner_prompt = get_planner_prompt(goal, files_tree)
 
         messages = [
@@ -146,7 +173,7 @@ class OmikunOrchestrator:
 
             while attempts < self.config.max_step_retries and not subtask_succeeded:
                 attempts += 1
-                files_tree = await self._get_workspace_file_tree()
+                files_tree = await self._get_workspace_context()
                 
                 reflection_prefix = ""
                 if attempts > 1:

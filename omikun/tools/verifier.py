@@ -45,11 +45,24 @@ class ProjectVerifierTool(BaseTool):
                     issues.append(f"⚠️ Empty file: '{rel_path}' has 0 bytes. Implement its contents.")
 
                 if f.endswith(".html"):
+                    import collections
                     content = full_path.read_text(encoding="utf-8", errors="replace")
                     
                     # Check for complete HTML structure
                     if "<html" not in content.lower() or "<body" not in content.lower():
                         issues.append(f"❌ Incomplete HTML in '{rel_path}': Missing <html> or <body> tags. Write the full valid HTML document starting with <!DOCTYPE html>.")
+
+                    # Check for duplicate IDs in HTML
+                    all_ids = re.findall(r'id=["\']([^"\']+)["\']', content)
+                    id_counts = collections.Counter(all_ids)
+                    for dom_id, count in id_counts.items():
+                        if count > 1:
+                            issues.append(f"❌ Duplicate DOM ID in '{rel_path}': Found {count} elements with id=\"{dom_id}\". Each ID in index.html must be unique.")
+
+                    # Check for duplicate search inputs
+                    search_inputs = re.findall(r'<input[^>]+(?:type=["\']text["\']|id=["\'][^"\']*(?:search|country|city)[^"\']*["\'])[^>]*>', content, re.IGNORECASE)
+                    if len(search_inputs) > 1:
+                        issues.append(f"❌ Duplicate Input Cards in '{rel_path}': Found {len(search_inputs)} text/search input boxes. Keep a single unified card/form.")
 
                     # Check for modern UI styling (Tailwind, modern CSS, or design framework)
                     has_tailwind = "tailwindcss.com" in content or "cdn.jsdelivr.net" in content or "styles.css" in content
@@ -114,6 +127,13 @@ class ProjectVerifierTool(BaseTool):
                     # Check for Open-Meteo property bugs
                     if "current_weather.temperature_2m" in js_content:
                         issues.append(f"❌ Open-Meteo Property Bug in '{rel_path}': In Open-Meteo current_weather object, the property is `current_weather.temperature` (not temperature_2m). Access `weatherData.current_weather.temperature`.")
+
+                    # Check for hardcoded static coordinates in dynamic search apps
+                    if "latitude=51.5" in js_content and ("country" in js_content.lower() or "city" in js_content.lower()) and "geocoding" not in js_content.lower():
+                        issues.append(
+                            f"❌ Static Coordinates in '{rel_path}': Fetching fixed London coordinates (51.5, -0.12) ignores user input. "
+                            f"Use Open-Meteo Geocoding to lookup coordinates dynamically: `https://geocoding-api.open-meteo.com/v1/search?name=${{encodeURIComponent(query)}}&count=1`."
+                        )
 
                     # Check for placeholder API keys (e.g. YOUR_API_KEY)
                     if re.search(r'YOUR_[A-Z_]*KEY', js_content, re.IGNORECASE) or ("api.openweathermap.org" in js_content and "appid=" in js_content):

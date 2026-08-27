@@ -39,11 +39,17 @@ CRITICAL RULES:
        - If using a Light Theme (e.g. `bg-white` or `bg-gray-100`): Use dark text (`text-slate-900` or `text-gray-900`) for all text and input boxes. NEVER put `text-white` inside a white background!
      * Controls & Interactivity: Include visible inputs, styled `<button>` elements with hover transitions, and containers for display results.
    - ZERO-KEY PUBLIC APIS & DATA INTEGRATION:
-     * When external data is needed (weather, geocoding, crypto, currencies): Use 100% free, public APIs that require ZERO API keys (e.g. Open-Meteo `https://api.open-meteo.com/v1/forecast?latitude=51.5&longitude=-0.12&current_weather=true`, or open public REST endpoints) or local mock data.
+     * When external data is needed (weather, geocoding, crypto, currencies): Use 100% free, public APIs that require ZERO API keys.
+     * Dynamic Weather Search: For weather by city/country, use the 2-step Open-Meteo pattern:
+       1. Geocode location query: `const geo = await (await fetch('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(query) + '&count=1')).json();`
+       2. Fetch weather using lat/lon:
+          `const weather = await (await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + geo.results[0].latitude + '&longitude=' + geo.results[0].longitude + '&current_weather=true')).json();`
+          Access `weather.current_weather.temperature` and `weather.current_weather.weathercode`.
      * NEVER use APIs that require sign-up or private keys (e.g. never use `appid=YOUR_API_KEY` or OpenWeatherMap).
    - JAVASCRIPT STATE & DOM CONSISTENCY CONTRACT:
      * Full Implementation: Write complete, working JavaScript with in-memory state or `localStorage` persistence.
      * Synchronize DOM IDs: Check `index.html` carefully. Every single ID queried in `app.js` (e.g. `document.getElementById('search-input')`) MUST exist identically in `index.html`.
+     * Unified UI: Keep a single clean UI card/form. Do not create multiple search bars or duplicated container sections.
      * Form Handling: When using `<form>`, always call `e.preventDefault()` inside the submit event listener so the page does not reload.
      * Zero Stubs: NEVER leave placeholder comments like `// TODO`, `// Handle logic`, or empty functions.
    - FULL FILE INTEGRITY: When creating or writing `index.html` or `app.js`, always write the COMPLETE file from beginning to end.
